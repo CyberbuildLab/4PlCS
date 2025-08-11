@@ -1,5 +1,7 @@
 # 4PlCS
-This repository contains the Matlab code used to produce the results in the manuscript "4-Plane Congruent Sets for Automatic Registration of As-Is 3D Point Clouds with 3D BIM Models". Ideally, it should be converted into Python (one day maybe). 
+This repository contains:
+- The original (poorly commented) Matlab code used to produce the results in the manuscript "4-Plane Congruent Sets for Automatic Registration of As-Is 3D Point Clouds with 3D BIM Models". Ideally, it should be converted into Python (one day maybe).
+- A Jupyter Notebook that reproduces the method in the paper. However, there may be some differences between the Matlab and Jupyter Notebook implementations.
 
 ## Acknowledgement
 ```
