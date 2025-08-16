@@ -1,3 +1,5 @@
+![Flowchart](flowchart.jpg)
+
 # 4PlCS
 
 This repository contains implementations of the method presented in "4-Plane Congruent Sets for Automatic Registration of As-Is 3D Point Clouds with 3D BIM Models" (https://doi.org/10.1016/j.autcon.2018.01.014) for registrating a dense point cloud (e.g. from laser scanning or photogrammetry) with a 3D BIM model.

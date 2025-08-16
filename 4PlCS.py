@@ -1415,20 +1415,9 @@ def run_4plcs(ifc_path, pcd_path):
     print(f"Transformed point cloud saved to {output_path}")
 
     # Plot the final alignment
-    final_pair = final_4PlCS_pairs[selected_index]
-
-    geom = []
-
-    for pcd_patch in pcd_patches[:30]:
-        pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
-        pcd_patch_pcd.transform(final_transformation)
-        geom.append(pcd_patch_pcd)
-
-    for ifc_patch in ifc_patches[:100]:
-        ifc_patch_mesh = ifc_patch["mesh"]
-        geom.append(ifc_patch_mesh)
-
-    o3d.visualization.draw_geometries(geom, mesh_show_back_face=True)
+    print("Displaying the final alignment of the full point cloud and the full IFC mesh.")
+    o3d.visualization.draw_geometries([pcd_transformed, combined_mesh],
+                                      window_name="Final Alignment: Point Cloud and IFC Mesh", mesh_show_back_face=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="4PlCS registration of a point cloud to an IFC model.")
