@@ -5,9 +5,9 @@
 This repository contains implementations of the method presented in "4-Plane Congruent Sets for Automatic Registration of As-Is 3D Point Clouds with 3D BIM Models" (https://doi.org/10.1016/j.autcon.2018.01.014) for registrating a dense point cloud (e.g. from laser scanning or photogrammetry) with a 3D BIM model.
 
 More specifically, it includes:
-- The original **Matlab** code used to produce the results in the manuscript. This code is provided "raw" and was not commented well. This assumes that the input 3D BIM model is converted in OBJ format. The files are now located under `matlab/`.
-- A **Jupyter Notebook** implementing that method too, but assuming that the input 3D BIM model is in IFC format. The notebook is annotated to explain each step and the parameters involved and can be found in `notebooks/`.
-- A Python script `4PlCS.py` that implements the 4PlCS algorithm.
+- The original **Matlab** code used to produce the results in the manuscript. This code is provided "raw" and was not commented well. This assumes that the input 3D BIM model is converted in OBJ format. The files are located in `matlab/`.
+- A **Jupyter Notebook** implementing that method too, but assuming that the input 3D BIM model is in IFC format. The notebook is annotated to explain each step and the parameters involved. The files are located in `notebooks/`.
+- A **Python script** `4PlCS.py` that implements the 4PlCS algorithm.
 
 <ins>IMPORTANTLY</ins>: the Jupyter Notebook and Python script implementations were developed independently from the Matlab implementation; both may thus differ in their implementation (e.g. assumptions about the pcd normal vectors)
 
