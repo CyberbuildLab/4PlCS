@@ -67,7 +67,7 @@ def run_4plcs(ifc_path, pcd_path):
     # ## Apply a random transformation to the PCD.
     # This is useful for testing purposes if the input data is already aligned.
     # Set APPLY_RANDOM_TRANSFORM to False to disable.
-    APPLY_RANDOM_TRANSFORM = True
+    APPLY_RANDOM_TRANSFORM = False
 
     random_transform = np.eye(4)
 
