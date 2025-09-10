@@ -29,12 +29,18 @@ import argparse
 np.set_printoptions(precision=2, suppress=True)
 
 def run_4plcs(ifc_path, pcd_path):
+    # Set the type of PCD. This allows for different parameter sets.
+    PCDTYPE = "TLS"
+    #PCDTYPE = "Other" 
+    print(f"PCDTYPE is set to '{PCDTYPE}'")
+
     # # 1. Extract PCD 4PlCSs
 
     # Read Input pointcloud
     pcd = o3d.io.read_point_cloud(pcd_path)
     print(f"Input pcd {pcd}")
 
+    # Get the base name of the pcd file for the output file name
     pcd_filename = os.path.splitext(os.path.basename(pcd_path))[0]
 
     # Downsample pcd
@@ -56,12 +62,12 @@ def run_4plcs(ifc_path, pcd_path):
 
     assert (downpcd_before_transform.has_normals()), "Point cloud should have normals, but doesn't"
 
-    o3d.visualization.draw_geometries([downpcd_before_transform], window_name="Downsampled Point Cloud")
+    # o3d.visualization.draw_geometries([downpcd_before_transform], window_name="Downsampled Point Cloud")
 
     # ## Apply a random transformation to the PCD.
     # This is useful for testing purposes if the input data is already aligned.
     # Set APPLY_RANDOM_TRANSFORM to False to disable.
-    APPLY_RANDOM_TRANSFORM = False
+    APPLY_RANDOM_TRANSFORM = True
 
     random_transform = np.eye(4)
 
@@ -76,6 +82,17 @@ def run_4plcs(ifc_path, pcd_path):
         
     print(random_transform)
 
+    # Visualize before and after random transformation with IFC mesh
+    original_pcd_viz = copy.deepcopy(downpcd_before_transform)
+    transformed_pcd_viz = copy.deepcopy(downpcd_before_transform)
+    transformed_pcd_viz.transform(random_transform)
+
+    # Color the point clouds for clarity
+    original_pcd_viz.paint_uniform_color([0, 0, 1])      # Blue: original
+    transformed_pcd_viz.paint_uniform_color([1, 0, 0])   # Red: transformed
+
+    o3d.visualization.draw_geometries([original_pcd_viz, transformed_pcd_viz])
+
     downpcd = downpcd_before_transform.transform(random_transform)
 
     # ## Extract planar patches from the PCD.
@@ -85,29 +102,42 @@ def run_4plcs(ifc_path, pcd_path):
 
     stime_pcd_patches = time.time()
 
-    my_min_plane_edge_length = 0.4
-    normal_variance_threshold_deg = 10.0
+    extract_patch_area_min = 0.25 #m^2
+    point_area = pow(pcd_voxel_sampling_size, 2)
+
+    if PCDTYPE == "TLS":
+        my_min_plane_edge_length = 0.4
+        normal_variance_threshold_deg = 10.0
+        coplanarity_deg = 87.0
+        outlier_ratio = 0.85
+        min_num_points = int(round(extract_patch_area_min / point_area))
+    else: # Other
+        my_min_plane_edge_length = 0.4
+        normal_variance_threshold_deg = 10.0
+        coplanarity_deg = 87.0
+        outlier_ratio = 0.85
+        min_num_points = int(round(extract_patch_area_min / point_area))
 
     oboxes = downpcd.detect_planar_patches(
         normal_variance_threshold_deg = normal_variance_threshold_deg,
-        coplanarity_deg = 87,
-        outlier_ratio = 0.85,
+        coplanarity_deg = coplanarity_deg,
+        outlier_ratio = outlier_ratio,
         min_plane_edge_length = my_min_plane_edge_length,
-        min_num_points = 100,
+        min_num_points = min_num_points,
         search_param = o3d.geometry.KDTreeSearchParamKNN(knn=30))
 
     print(f"Number of patches: {len(oboxes)}.")
 
     # Create a list of patches, filtering out those that are too small or too thick.
     print("Create patches list with bounding boxes and point clouds.")
+    if PCDTYPE == "TLS":
+        patch_thickness_max = 0.10
+        patch_area_min = 1.0
+    else: # Other
+        patch_thickness_max = 0.10
+        patch_area_min = 1.0
 
-    patch_thickness_max = 0.10
-
-    point_area = pow(pcd_voxel_sampling_size, 2)
-    points_per_area = 1 / point_area
-    patch_area_min = 2.0
-    patch_min_points = round(patch_area_min * points_per_area)
-    print(f"Minimum patch area set to {patch_area_min}, which corresponds to {patch_min_points} points.")
+    print(f"Minimum patch area set to {patch_area_min} m^2, and minimum patch thickness set to {patch_thickness_max} m.")
 
     patch_sampling_count = 10
     patch_sampling_max = 1000
@@ -126,7 +156,8 @@ def run_4plcs(ifc_path, pcd_path):
         
         too_thick = False
         too_small = False
-        if len(patch_pcd.points) < patch_min_points:
+        patch_area = len(patch_pcd.points) * point_area
+        if patch_area < patch_area_min:
             too_small = True
             pcd_patches_too_small.append(patch_obox)
         
@@ -143,7 +174,6 @@ def run_4plcs(ifc_path, pcd_path):
         d = -np.dot(patch_normal, patch_center)
         a, b, c = patch_normal
         patch_model = [a, b, c, d]
-        patch_area = len(patch_pcd.points) * point_area
         patch_downpcd = patch_pcd.uniform_down_sample(patch_sampling_count)
         patch_downpcd_size = len(patch_downpcd.points)
         if patch_downpcd_size > patch_sampling_max:
@@ -172,7 +202,7 @@ def run_4plcs(ifc_path, pcd_path):
     print("Draw detected patches, horizontal and/or no-horizontal, with meshes and/or point clouds")
 
     horizontal = False
-    not_horizontal = True
+    not_horizontal = False # Set to False to speed up visualization
     print(f"Horizontal planes displayed: {horizontal}; Non-horizontal patches displayed: {not_horizontal}")
     display_obox = False
     display_points = True
@@ -201,7 +231,7 @@ def run_4plcs(ifc_path, pcd_path):
             if display_points == True:
                 geometries_pcd.append(patch_pcd)
 
-    o3d.visualization.draw_geometries(geometries_pcd, window_name="PCD Patches")
+    # o3d.visualization.draw_geometries(geometries_pcd, window_name="PCD Patches")
 
     # ## Extract 4-Point Congruent Sets (4PlCSs) from the PCD patches.
     # A valid 4PlCS consists of four planar patches where:
@@ -362,14 +392,14 @@ def run_4plcs(ifc_path, pcd_path):
         return valid_combinations
 
 
-    def find_largest_4PlCSs (patches: list, a4PlCSs: list, max_patches: int):
+    def find_largest_4PlCSs (a4PlCSs: list, patches: list, max_patches: int):
         
         # Select the max_patches patches with the largest area (patches is already sorted according to "area")
         patches_filtered = patches[:max_patches]
         
         # Select the 4PlCSs that contain at least one of the largest patches
         patches_filtered_ids = range(len(patches_filtered))
-        filtered_4PlCSs = [a4PlCS for a4PlCS in a4PlCSs if any(id_ in patches_filtered_ids for id_ in a4PlCS['patch_ids'])]
+        filtered_4PlCSs = [a4PlCS for a4PlCS in a4PlCSs if any(id_ in patches_filtered_ids for id_ in a4PlCS['patch_ids'])] # type: ignore
         print (f"There are {len(filtered_4PlCSs)} filtered 4PlCSs.")
 
         return filtered_4PlCSs
@@ -384,16 +414,16 @@ def run_4plcs(ifc_path, pcd_path):
     pcd_4PlCSs = find_valid_patch_combinations(pcd_patches, coplanar_angle_thresh, coplanar_dist_thresh, plane_dist_thresh)
 
     # Sort 4PlCSs by area
-    pcd_4PlCSs = sorted(pcd_4PlCSs, key=lambda p: p['area'], reverse=True)
-
-    print(f"There are {len(list(pcd_4PlCSs))} 4PlCSs in the pcd.")
+    # pcd_4PlCSs = sorted(pcd_4PlCSs, key=lambda p: p['area'], reverse=True)
+    # print(f"There are {len(list(pcd_4PlCSs))} 4PlCSs in the pcd.")
 
     # Select the top largest PCD 4PlCSs for matching.
     # Note: This could be improved by using a minimum area threshold instead of a fixed number.
-    pcd_patches_max = 30
-    pcd_4PlCSs_largest = find_largest_4PlCSs(pcd_patches, pcd_4PlCSs, pcd_patches_max)
-    print (f"There are {len(pcd_4PlCSs_largest)} largest 4PlCSs in the pcd.")
+    pcd_patches_max = 20
+    pcd_4PlCSs_largest = find_largest_4PlCSs(pcd_4PlCSs, pcd_patches, pcd_patches_max)
+    pcd_4PlCSs_largest  = sorted(pcd_4PlCSs_largest , key=lambda p: p['area'], reverse=True)
 
+    # Filter to the top N 4PlCSs
     pcd_4PlCSs_max = 100
     pcd_4PlCSs_filtered = pcd_4PlCSs_largest[:pcd_4PlCSs_max]
     print (f"There are {len(pcd_4PlCSs_filtered)} filtered 4PlCSs in the pcd.")
@@ -451,7 +481,7 @@ def run_4plcs(ifc_path, pcd_path):
         all_meshes.append(element_mesh)
 
     # Plot loaded IFC file
-    o3d.visualization.draw_geometries(all_meshes, mesh_show_back_face=True, window_name="IFC Model")
+    # o3d.visualization.draw_geometries(all_meshes, mesh_show_back_face=True, window_name="IFC Model")
 
     # ## Extract planar patches from the IFC mesh.
     # This section extracts planar patches from the IFC mesh using a region-growing approach based on triangle normal similarity.
@@ -663,6 +693,12 @@ def run_4plcs(ifc_path, pcd_path):
     # Extract IFC Patches
     stime_ifc_patches = time.time()
 
+    if PCDTYPE == "TLS":
+        ifc_patch_obox_thickness = 0.10
+    else:
+        ifc_patch_obox_thickness = 0.10
+
+
     ifc_patches = []
     ifc_patches_too_small = []
 
@@ -684,7 +720,7 @@ def run_4plcs(ifc_path, pcd_path):
                 ifc_patches_too_small.append(patch_mesh)
                 continue
             
-            patch_obox = compute_patch_obox(patch_mesh, thickness=0.1)
+            patch_obox = compute_patch_obox(patch_mesh, thickness=ifc_patch_obox_thickness)
             patch_obox.color = np.array([0.3, 0.3, 0.3], dtype=np.float32)
 
             ifc_patches.append({"mesh": patch_mesh, 
@@ -714,16 +750,17 @@ def run_4plcs(ifc_path, pcd_path):
     ifc_4PlCSs = find_valid_patch_combinations(ifc_patches, coplanar_angle_thresh, coplanar_dist_thresh, plane_dist_thresh)
 
     # Sort 4PlCSs by area
-    ifc_4PlCSs = sorted(ifc_4PlCSs, key=lambda p: p['area'], reverse=True)
+    # ifc_4PlCSs = sorted(ifc_4PlCSs, key=lambda p: p['area'], reverse=True)
 
     # Select Largest IFC 4PlCSs
     ifc_patches_max = 50
-    ifc_4PlCSs_largest = find_largest_4PlCSs(ifc_patches, ifc_4PlCSs, ifc_patches_max)
-    print (f"There are {len(ifc_4PlCSs_largest)} largest 4PlCSs in the ifc.")
+    ifc_4PlCSs_largest = find_largest_4PlCSs(ifc_4PlCSs, ifc_patches, ifc_patches_max)
+    ifc_4PlCSs_largest = sorted(ifc_4PlCSs_largest, key=lambda p: p['area'], reverse=True)
 
-    ifc_4PlCSs_max = 500
+    match_4PlCSs_max = 100000
+    ifc_4PlCSs_max = round(match_4PlCSs_max / pcd_4PlCSs_max)
     ifc_4PlCSs_filtered = ifc_4PlCSs_largest[:ifc_4PlCSs_max]
-    print (f"There are {len(ifc_4PlCSs_filtered)} filtered 4PlCSs in the pcd.")
+    print (f"There are {len(ifc_4PlCSs_filtered)} largest 4PlCSs in the ifc.")
 
     etime_ifc_4PlCSs = time.time()
     duration_ifc_4PlCSs = etime_ifc_4PlCSs - stime_ifc_4PlCSs
@@ -748,7 +785,7 @@ def run_4plcs(ifc_path, pcd_path):
         pcd_patch_pcd = pcd_patch["downpcd"]
         geom.append(pcd_patch_pcd)
 
-    o3d.visualization.draw_geometries(geom, mesh_show_back_face=True)
+    # o3d.visualization.draw_geometries(geom, mesh_show_back_face=True)
 
     def intersect_three_planes(plane1, plane2, plane3):
         """
@@ -1032,7 +1069,7 @@ def run_4plcs(ifc_path, pcd_path):
         else:
             return o3d.geometry.PointCloud()
 
-    def find_best_transformations_for_patchset_pair(pcd_4PlCS, ifc_4PlCS, min_support, no_vertical_inversion=False):
+    def find_best_transformations_for_patchset_pair(pcd_4PlCS, ifc_4PlCS, min_support_ratio, no_vertical_inversion=False):
 
         pcd_planes = []
         for i in pcd_4PlCS["patch_ids"]:
@@ -1102,14 +1139,22 @@ def run_4plcs(ifc_path, pcd_path):
                         pcd_patch_downpcd_cropped = pcd_patch_downpcd.crop(ifc_patch_obox)
                         point_support_obox += len(pcd_patch_downpcd_cropped.points)
                        
+                # Calculate minimum support
+                a4PlCS_point_total = 0.0  
+                for i in pcd_4PlCS["patch_ids"]:
+                    a4PlCS_point_total += len(pcd_patches[i]["downpcd"].points)
+                point_support_4PlCS_min = int(round(a4PlCS_point_total * min_support_ratio))
+
+                if point_support_obox < point_support_4PlCS_min:
+                    continue
+
                 candidate = {"transformation12": Transformation12, 
                             "transformation23": Transformation23,
                             "transformation13": Transformation13, 
                             "support-obox": point_support_obox}
                 candidates.append(candidate)
 
-        filtered_candidates = [x for x in candidates if x["support-obox"] > min_support]
-        sorted_filtered_candidates = sorted(filtered_candidates, key=lambda x: x["support-obox"], reverse=True)
+        sorted_filtered_candidates = sorted(candidates, key=lambda x: x["support-obox"], reverse=True)
 
         return sorted_filtered_candidates
 
@@ -1125,7 +1170,7 @@ def run_4plcs(ifc_path, pcd_path):
                 unique_transforms.append(a4PlCS_pair)
         return unique_transforms
 
-    def remove_duplicate_transformations2(best_4PlCS_pairs, angle_tol=1e-5, dist_tol=0.02):
+    def remove_duplicate_transformations2(best_4PlCS_pairs, angle_tol=0.1, dist_tol=0.1):
         unique_transforms = []
         for a4PlCS_pair in best_4PlCS_pairs:
             T = a4PlCS_pair["transformation"]
@@ -1156,11 +1201,18 @@ def run_4plcs(ifc_path, pcd_path):
     print(f"Number of 4PlCS pairs tested: {len(pcd_4PlCSs_filtered)} x {len(ifc_4PlCSs_filtered)} = {total}")
 
     # Threshold for geometry similarity check
-    diff_distance_max = 0.2
-    diff_angle_max = 4.0
+    if PCDTYPE == "TLS":
+        diff_distance_max = 0.2
+        diff_angle_max = 4.0
+        min_support_ratio = 0.3
+    else:
+        diff_distance_max = 0.2
+        diff_angle_max = 4.0
+        min_support_ratio = 0.3
+
 
     # Threshold for point count support when matching pcd and ifc patches
-    min_support_downpcd_count = int(round(patch_sampling_max / 2))
+    # min_support_downpcd_count = int(round(patch_sampling_max / 2))
     best_4PlCS_pairs = []
 
     for pcd_i, pcd_4PlCS in enumerate(pcd_4PlCSs_filtered):
@@ -1176,7 +1228,7 @@ def run_4plcs(ifc_path, pcd_path):
                 continue
 
             # Find best transformations for the patch set pair
-            top_transformations = find_best_transformations_for_patchset_pair(pcd_4PlCS, ifc_4PlCS, min_support_downpcd_count,no_vertical_inversion=True)
+            top_transformations = find_best_transformations_for_patchset_pair(pcd_4PlCS, ifc_4PlCS, min_support_ratio, no_vertical_inversion=True)
             
             if not top_transformations:
                 continue
@@ -1189,13 +1241,13 @@ def run_4plcs(ifc_path, pcd_path):
                 
                 best_4PlCS_pairs.append(good_4PlCS_pair)
 
-    print (f"Number of 4PlCS pairs retained with min support = {min_support_downpcd_count}: {len(best_4PlCS_pairs)}")
+    print (f"Number of 4PlCS pairs retained with min support ratio = {min_support_ratio}: {len(best_4PlCS_pairs)}")
 
     # Keep 500 transformations with largest support and remove duplicates
     sorted_best_4PlCS_pairs = sorted(best_4PlCS_pairs, key=lambda c: c["support-obox"], reverse=True)
     top_4PlCS_pairs = sorted_best_4PlCS_pairs[:500]
     stime_duplicate = time.time()
-    unique_top_4PlCS_pairs = remove_duplicate_transformations2(top_4PlCS_pairs, angle_tol=0.01, dist_tol=0.05)
+    unique_top_4PlCS_pairs = remove_duplicate_transformations2(top_4PlCS_pairs, angle_tol=0.1, dist_tol=0.1)
     print (f"Number of top unique 4PlCS pairs: {len(unique_top_4PlCS_pairs)}")
 
     # Print Top Pairs
@@ -1231,57 +1283,51 @@ def run_4plcs(ifc_path, pcd_path):
     duration_total = duration_pcd_patches + duration_pcd_4PlCSs + duration_ifc_patches + duration_ifc_4PlCSs + duration_match_4PlCSs
     print(f"Time total: {duration_total:.2f} s")
 
-    # Plot Top Pairs
-    plot_count = 2 
-
-    for a4PlCS_pair in unique_top_4PlCS_pairs[:plot_count]:
-        
-        geom = []
-
-        transformation = a4PlCS_pair["transformation"]
-        
-        for pcd_patch in pcd_patches[:30]:
-            pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
-            pcd_patch_pcd.transform(transformation)
-            geom.append(pcd_patch_pcd)
-        
-        for ifc_patch in ifc_patches[:100]:
-            ifc_patch_mesh = ifc_patch["mesh"]
-            geom.append(ifc_patch_mesh)
-
-        o3d.visualization.draw_geometries(geom, mesh_show_back_face=True)
-
     # ## Refine the order of the best transformations.
     # This section re-evaluates the top transformations by calculating support based on projecting PCD points onto the actual IFC patch meshes, rather than just their bounding boxes. This provides a more accurate ranking.
 
-    # Refine selection based on projection on triangles
+    def calculate_support_patches(pcd_patches_in, transformation_in, ifc_patches_in):
+        total_count = 0
+        
+        for pcd_patch in pcd_patches_in:
+            pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
+            pcd_patch_pcd.transform(transformation_in)
+
+            for ifc_patch in ifc_patches_in:
+                ifc_patch_obox = ifc_patch["obox"]
+                cropped_pcd = pcd_patch_pcd.crop(ifc_patch_obox)
+                total_count += len(cropped_pcd.points)
+        
+        return total_count
+
+    # Refine selection based on support from all patches
     stime_order_4PlCSs = time.time()
 
-    order_count = 20
+    order_count = 200
     final_4PlCS_pairs = []
 
     for a4PlCS_pair in unique_top_4PlCS_pairs[:order_count]:
         transformation = a4PlCS_pair["transformation"]
 
-        total_count = 0
-        
-        for pcd_patch in pcd_patches:
-            pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
-            pcd_patch_pcd.transform(transformation)
-        
-            for ifc_patch in ifc_patches:
-                ifc_patch_mesh = ifc_patch["mesh"]
-                ifc_patch_obox = ifc_patch["obox"]
-                cropped_pcd = pcd_patch_pcd.crop(ifc_patch_obox)
-                if float(len(cropped_pcd.points)) / float(len(pcd_patch_pcd.points)) > 0.8:
-                    pcd_matching_triangles = get_points_projecting_inside_mesh(cropped_pcd, ifc_patch_mesh)
-                    total_count += len(pcd_matching_triangles.points)
+        # total_count = 0
+        # for pcd_patch in pcd_patches:
+        #     pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
+        #     pcd_patch_pcd.transform(transformation)
+        #     for ifc_patch in ifc_patches:
+        #         ifc_patch_mesh = ifc_patch["mesh"]
+        #         ifc_patch_obox = ifc_patch["obox"]
+        #         cropped_pcd = pcd_patch_pcd.crop(ifc_patch_obox)
+        #         if float(len(cropped_pcd.points)) / float(len(pcd_patch_pcd.points)) > 0.8:
+        #             pcd_matching_triangles = get_points_projecting_inside_mesh(cropped_pcd, ifc_patch_mesh)
+        #             total_count += len(pcd_matching_triangles.points)
+
+        total_count = calculate_support_patches(pcd_patches, transformation, ifc_patches)
         
         new_4PlCS_pair = copy.deepcopy(a4PlCS_pair)
-        new_4PlCS_pair["support-mesh"] = total_count
+        new_4PlCS_pair["support-patches"] = total_count
         final_4PlCS_pairs.append(new_4PlCS_pair)
 
-    final_4PlCS_pairs = sorted(final_4PlCS_pairs, key=lambda c: c["support-mesh"], reverse=True)
+    final_4PlCS_pairs = sorted(final_4PlCS_pairs, key=lambda c: c["support-patches"], reverse=True)
     print (f"Number of 4PlCS pairs final: {len(final_4PlCS_pairs)}")
 
     # Print Final Pairs
@@ -1290,8 +1336,8 @@ def run_4plcs(ifc_path, pcd_path):
 
     for a4PlCS_pair in final_4PlCS_pairs[:print_count]:
         support = a4PlCS_pair["support-obox"]
-        print(support)
-        support_mesh = a4PlCS_pair["support-mesh"]
+        print(f"4PlCS Support: {support}")
+        support_mesh = a4PlCS_pair["support-patches"]
         print(support_mesh)
 
         transformation = a4PlCS_pair["transformation"]
@@ -1326,20 +1372,20 @@ def run_4plcs(ifc_path, pcd_path):
         geom = []
 
         transformation = a4PlCS_pair["transformation"]
-        
+        pcd_viz = copy.deepcopy(downpcd)
+        pcd_viz.transform(transformation)
+        geom.append(pcd_viz)
+
         for pcd_patch in pcd_patches[:30]:
             pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
             pcd_patch_pcd.transform(transformation)
-            geom.append(pcd_patch_pcd)
+            # geom.append(pcd_patch_pcd)
         
-        for ifc_patch in ifc_patches[:100]:
-            ifc_patch_mesh = ifc_patch["mesh"]
-            geom.append(ifc_patch_mesh)
+        geom.extend(all_meshes)
 
-        o3d.visualization.draw_geometries(geom, mesh_show_back_face=True)
+        o3d.visualization.draw_geometries(geom, window_name=f"Candidate {i+1}", mesh_show_back_face=True)
 
-        user_input = input(f"Accept this alignment? (y/n): ")
-        if user_input.lower() == 'y':
+        if selected_index == -1 and input(f"Accept this alignment? (y/n): ").lower() == 'y':
             selected_index = i
             break
 
@@ -1347,22 +1393,6 @@ def run_4plcs(ifc_path, pcd_path):
     # The user selects the preferred transformation from the refined list, and ICP is applied to fine-tune the alignment.
     if selected_index == -1:
         print("No candidate selected. Displaying all candidates again.")
-        for i, a4PlCS_pair in enumerate(final_4PlCS_pairs[:plot_count]):
-            print(f"Displaying candidate {i+1}")
-            geom = []
-
-            transformation = a4PlCS_pair["transformation"]
-            
-            for pcd_patch in pcd_patches[:30]:
-                pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
-                pcd_patch_pcd.transform(transformation)
-                geom.append(pcd_patch_pcd)
-            
-            for ifc_patch in ifc_patches[:100]:
-                ifc_patch_mesh = ifc_patch["mesh"]
-                geom.append(ifc_patch_mesh)
-
-            o3d.visualization.draw_geometries(geom, mesh_show_back_face=True)
         
         while selected_index < 0 or selected_index >= plot_count:
             try:
@@ -1408,7 +1438,7 @@ def run_4plcs(ifc_path, pcd_path):
     # Save transformed point cloud
     output_dir = os.path.join("output")
     os.makedirs(output_dir, exist_ok=True)
-    pcd_transformed = copy.deepcopy(pcd)
+    pcd_transformed = copy.deepcopy(downpcd_before_transform)
     pcd_transformed.transform(final_transformation)
     output_path = os.path.join(output_dir, f"{pcd_filename}_aligned.ply")
     o3d.io.write_point_cloud(output_path, pcd_transformed)
