@@ -79,19 +79,19 @@ def run_4plcs(ifc_path, pcd_path):
         random_rotation = R.from_euler('xyz', random_euler_deg, degrees=True).as_matrix()
         random_transform[:3, :3] = random_rotation
         random_transform[:3, 3] = random_translation
+
+        # Visualize before and after random transformation with IFC mesh
+        original_pcd_viz = copy.deepcopy(downpcd_before_transform)
+        transformed_pcd_viz = copy.deepcopy(downpcd_before_transform)
+        transformed_pcd_viz.transform(random_transform)
+
+        # Color the point clouds for clarity
+        original_pcd_viz.paint_uniform_color([0, 0, 1])      # Blue: original
+        transformed_pcd_viz.paint_uniform_color([1, 0, 0])   # Red: transformed
+
+        o3d.visualization.draw_geometries([original_pcd_viz, transformed_pcd_viz])        
         
-    print(random_transform)
-
-    # Visualize before and after random transformation with IFC mesh
-    original_pcd_viz = copy.deepcopy(downpcd_before_transform)
-    transformed_pcd_viz = copy.deepcopy(downpcd_before_transform)
-    transformed_pcd_viz.transform(random_transform)
-
-    # Color the point clouds for clarity
-    original_pcd_viz.paint_uniform_color([0, 0, 1])      # Blue: original
-    transformed_pcd_viz.paint_uniform_color([1, 0, 0])   # Red: transformed
-
-    o3d.visualization.draw_geometries([original_pcd_viz, transformed_pcd_viz])
+        print(random_transform)
 
     downpcd = downpcd_before_transform.transform(random_transform)
 
