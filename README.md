@@ -77,3 +77,5 @@ year = {2018},
 issn = {0926-5805},
 doi = {https://doi.org/10.1016/j.autcon.2018.01.014}}
 ```
+
+In addition, Ahmet Ersoz made significant contributions to reproduce the method and create this repository.
