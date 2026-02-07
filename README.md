@@ -78,4 +78,8 @@ issn = {0926-5805},
 doi = {https://doi.org/10.1016/j.autcon.2018.01.014}}
 ```
 
-In addition, Ahmet Ersoz made significant contributions to reproduce the method and create this repository.
+<a href="https://github.com/cyberbuildlab/4PlCS/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=cyberbuildlab/4PlCS" />
+</a>
+
+*Made with [contrib.rocks](https://contrib.rocks)*
