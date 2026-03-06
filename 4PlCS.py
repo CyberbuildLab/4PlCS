@@ -34,7 +34,10 @@ def run_4plcs(ifc_path, pcd_path):
     #PCDTYPE = "Other" 
     print(f"PCDTYPE is set to '{PCDTYPE}'")
 
+
+    ###############################################################################
     # # 1. Extract PCD 4PlCSs
+    ###############################################################################
 
     # Read Input pointcloud
     pcd = o3d.io.read_point_cloud(pcd_path)
@@ -44,7 +47,11 @@ def run_4plcs(ifc_path, pcd_path):
     pcd_filename = os.path.splitext(os.path.basename(pcd_path))[0]
 
     # Downsample pcd
-    pcd_voxel_sampling_size = 0.05
+    if PCDTYPE == "TLS":
+        pcd_voxel_sampling_size = 0.05
+    else:
+        pcd_voxel_sampling_size = 0.05
+
     downpcd_tmp = pcd.voxel_down_sample(pcd_voxel_sampling_size)
     print(f"Point pcd voxel sampling size: {pcd_voxel_sampling_size}.")
     print(f"Input downsampled PCD: {downpcd_tmp}.")
@@ -55,8 +62,13 @@ def run_4plcs(ifc_path, pcd_path):
     print(f"Point pcd sampling ratio: {sampling_ratio} (sampling cout = {sampling_count}).")
     print(f"Input uniformly downsampled PCD: {downpcd_before_transform}.")
 
+
     # Calculate pcd normals
-    my_radius = 0.20
+    if PCDTYPE == "TLS":
+        my_radius = 0.20
+    else:
+        my_radius = 0.20
+
     downpcd_before_transform.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=my_radius, max_nn=30))
 
@@ -64,10 +76,31 @@ def run_4plcs(ifc_path, pcd_path):
 
     # o3d.visualization.draw_geometries([downpcd_before_transform], window_name="Downsampled Point Cloud")
 
+
+    ##########################################################################
+    # ## Known Expected Location:
+    # Do we know the expected location? 
+    # If no, then set `KNOWN_TARGET_LOCATION` to `False`.
+    # If yes, then set `KNOWN_TARGET_LOCATION` to `True` and give the location coordinate to `pcd_origin_target`.
+    
+    KNOWN_TARGET_LOCATION = False
+
+    print(f"KNOWN_TARGET_LOCATION is set to '{KNOWN_TARGET_LOCATION}'")
+
+    pcd_origin_init = [0.0, 0.0, 0.0]
+    print(f"pcd_origin_init: {pcd_origin_init}")
+
+    if KNOWN_TARGET_LOCATION:
+        pcd_origin_target = [-3.4854, 1.5203, 1.00]
+        print(f"pcd_origin_target: {pcd_origin_target}")
+
+    ##########################################################################
     # ## Apply a random transformation to the PCD.
     # This is useful for testing purposes if the input data is already aligned.
     # Set APPLY_RANDOM_TRANSFORM to False to disable.
+
     APPLY_RANDOM_TRANSFORM = False
+    print(f"APPLY_RANDOM_TRANSFORM is set to '{APPLY_RANDOM_TRANSFORM}'")
 
     random_transform = np.eye(4)
 
@@ -91,9 +124,11 @@ def run_4plcs(ifc_path, pcd_path):
 
         o3d.visualization.draw_geometries([original_pcd_viz, transformed_pcd_viz])        
         
+        print("Random Transform:")
         print(random_transform)
 
     downpcd = downpcd_before_transform.transform(random_transform)
+
 
     # ## Extract planar patches from the PCD.
     # This section detects planar patches in the point cloud using Open3D's `detect_planar_patches`.
@@ -102,16 +137,17 @@ def run_4plcs(ifc_path, pcd_path):
 
     stime_pcd_patches = time.time()
 
-    extract_patch_area_min = 0.25 #m^2
-    point_area = pow(pcd_voxel_sampling_size, 2)
-
     if PCDTYPE == "TLS":
+        extract_patch_area_min = 0.25 #m^2
+        point_area = pow(pcd_voxel_sampling_size, 2)
         my_min_plane_edge_length = 0.4
         normal_variance_threshold_deg = 10.0
         coplanarity_deg = 87.0
         outlier_ratio = 0.85
         min_num_points = int(round(extract_patch_area_min / point_area))
     else: # Other
+        extract_patch_area_min = 0.25 #m^2
+        point_area = pow(pcd_voxel_sampling_size, 2)
         my_min_plane_edge_length = 0.4
         normal_variance_threshold_deg = 10.0
         coplanarity_deg = 87.0
@@ -154,20 +190,17 @@ def run_4plcs(ifc_path, pcd_path):
         patch_indices = patch_obox.get_point_indices_within_bounding_box(downpcd.points)
         patch_pcd = downpcd.select_by_index(patch_indices)
         
-        too_thick = False
-        too_small = False
+        # Discard small patches
         patch_area = len(patch_pcd.points) * point_area
         if patch_area < patch_area_min:
-            too_small = True
-            pcd_patches_too_small.append(patch_obox)
-        
-        if np.min(patch_obox.extent) > patch_thickness_max:
-            too_thick = True
-            pcd_patches_too_thick.append(patch_obox)
-
-        if too_small or too_thick:
+            pcd_patches_too_small.append(patch_obox)  
             continue
 
+        # Discard thick patches
+        if np.min(patch_obox.extent) > patch_thickness_max:
+            pcd_patches_too_thick.append(patch_obox)
+            continue
+        
         patch_pcd.paint_uniform_color(patch_obox.color)
         patch_center = np.asarray(patch_pcd.points).mean(axis=0)
         patch_normal = patch_obox.R[:,2]
@@ -232,6 +265,8 @@ def run_4plcs(ifc_path, pcd_path):
                 geometries_pcd.append(patch_pcd)
 
     # o3d.visualization.draw_geometries(geometries_pcd, window_name="PCD Patches")
+
+
 
     # ## Extract 4-Point Congruent Sets (4PlCSs) from the PCD patches.
     # A valid 4PlCS consists of four planar patches where:
@@ -407,18 +442,21 @@ def run_4plcs(ifc_path, pcd_path):
     # Extract PCD 4PlCSs
     stime_pcd_4PlCSs = time.time()
 
-    coplanar_angle_thresh = 5.0
-    coplanar_dist_thresh = 0.05 
-    plane_dist_thresh = 3.0
+    if PCDTYPE == "TLS":
+        coplanar_angle_thresh = 5.0
+        coplanar_dist_thresh = 0.05
+        plane_dist_thresh = 1.5
+    else:
+        coplanar_angle_thresh = 5.0
+        coplanar_dist_thresh = 0.05 
+        plane_dist_thresh = 1.5
 
     pcd_4PlCSs = find_valid_patch_combinations(pcd_patches, coplanar_angle_thresh, coplanar_dist_thresh, plane_dist_thresh)
 
-    # Sort 4PlCSs by area
-    # pcd_4PlCSs = sorted(pcd_4PlCSs, key=lambda p: p['area'], reverse=True)
-    # print(f"There are {len(list(pcd_4PlCSs))} 4PlCSs in the pcd.")
 
     # Select the top largest PCD 4PlCSs for matching.
-    # Note: This could be improved by using a minimum area threshold instead of a fixed number.
+    # NOTE: This could be improved by using a minimum area threshold instead of a fixed number.
+    # --------------------------------
     pcd_patches_max = 20
     pcd_4PlCSs_largest = find_largest_4PlCSs(pcd_4PlCSs, pcd_patches, pcd_patches_max)
     pcd_4PlCSs_largest  = sorted(pcd_4PlCSs_largest , key=lambda p: p['area'], reverse=True)
@@ -432,7 +470,11 @@ def run_4plcs(ifc_path, pcd_path):
     duration_pcd_4PlCSs = etime_pcd_4PlCSs - stime_pcd_4PlCSs
     print(f"Time to extract 4PlCSs: {duration_pcd_4PlCSs:.2f} s")
 
+
+
+    ###############################################################################
     # # 2. Loading and Processing IFC Model
+    ###############################################################################
 
     # ## Load the IFC file and convert its geometry to Open3D meshes.
     # We load an IFC file and keep only the elements of certain classes (currently "IfcWall", "IfcSlab" and "IfcBeam").
@@ -464,6 +506,7 @@ def run_4plcs(ifc_path, pcd_path):
     tree = ifcopenshell.geom.tree()
     settings = ifcopenshell.geom.settings()
     settings.set(settings.USE_WORLD_COORDS, True)
+    #settings.set(settings.SEW_SHELLS, True)
 
     # Initialize Open3D structures
     elements = []
@@ -712,14 +755,18 @@ def run_4plcs(ifc_path, pcd_path):
             patch_mesh, patch_normal, patch_center, patch_model = compute_patch_mesh_normal_center_model(mesh, patch)
             
             patch_area = compute_patch_area(patch_mesh)
-
-            patch_too_small = False
             
+            # Discard patches that are too small:
             if patch_area < patch_area_min:
-                patch_too_small = True
                 ifc_patches_too_small.append(patch_mesh)
                 continue
-            
+
+            # Discard wrongly oriented patches (if known location):
+            if KNOWN_TARGET_LOCATION:
+                if np.dot(pcd_origin_target - patch_center, patch_normal) < 0.0:
+                    ifc_patches_wrong_orientation.append(patch_mesh)
+                    continue
+
             patch_obox = compute_patch_obox(patch_mesh, thickness=ifc_patch_obox_thickness)
             patch_obox.color = np.array([0.3, 0.3, 0.3], dtype=np.float32)
 
@@ -735,11 +782,15 @@ def run_4plcs(ifc_path, pcd_path):
 
     print(f"Found {ifc_patches_total} planar patches.")
     print(f"Found {len(ifc_patches)} valid planar patches.")
+    if KNOWN_TARGET_LOCATION:
+        print(f"Found {len(ifc_patches_wrong_orientation)} wrongly oriented planar patches (because known pcd origin target location).")
     print(f"Found {len(ifc_patches_too_small)} too small planar patches.")
 
     etime_ifc_patches = time.time()
     duration_ifc_patches = etime_ifc_patches - stime_ifc_patches
     print(f"Time to extract ifc patches: {duration_ifc_patches:.2f} s")
+
+
 
     # ## Extract 4PlCSs from the IFC patches.
     # This section extracts valid and useful 4PlCSs from the IFC patches using the same method as for the point cloud patches.
@@ -748,9 +799,6 @@ def run_4plcs(ifc_path, pcd_path):
     stime_ifc_4PlCSs = time.time()
 
     ifc_4PlCSs = find_valid_patch_combinations(ifc_patches, coplanar_angle_thresh, coplanar_dist_thresh, plane_dist_thresh)
-
-    # Sort 4PlCSs by area
-    # ifc_4PlCSs = sorted(ifc_4PlCSs, key=lambda p: p['area'], reverse=True)
 
     # Select Largest IFC 4PlCSs
     ifc_patches_max = 50
@@ -766,6 +814,9 @@ def run_4plcs(ifc_path, pcd_path):
     duration_ifc_4PlCSs = etime_ifc_4PlCSs - stime_ifc_4PlCSs
     print(f"Time to extract ifc 4PlCSs: {duration_ifc_4PlCSs:.2f} s")
 
+
+
+    ###########################################################################
     # # 3. Match 4PlCSs
 
     # ## Find the best transformation by matching 4PlCSs.
@@ -1105,7 +1156,7 @@ def run_4plcs(ifc_path, pcd_path):
             pcd_planes2 = [transform_plane(pcd_plane, Transformation12) for pcd_plane in pcd_planes]
 
             # Find rotations around ifc_intersection_vector
-            # Note: angle_tol could be passed as a parameter
+            # NOTE: angle_tol could be passed as a parameter
             point = ifc_intersection_vector[0]
             vect = ifc_intersection_vector[1] - ifc_intersection_vector[0]
             planeA1 = pcd_planes2[1]
@@ -1127,8 +1178,19 @@ def run_4plcs(ifc_path, pcd_path):
                 if no_vertical_inversion == True and Transformation13[2, 2] < -0.9:
                     continue
 
+                # Test if passes known location constraint (if relevant):
+                if KNOWN_TARGET_LOCATION == True:
+                    v1_h = np.append(pcd_origin_init, 1.0)
+                    v2_h = Transformation13 @ v1_h  # matrix multiplication
+                    pcd_origin_transformed = v2_h[:3] / v2_h[3] # Convert back to 3D coordinates
+                    pcd_origin_diff = pcd_origin_transformed - pcd_origin_target
+                    #print(f"{v1_h}, {pcd_origin_transformed}, {pcd_origin_target}, {pcd_origin_diff}")
+                    if np.linalg.norm(pcd_origin_diff) > 1.0:
+                        continue
+                    # NOTE: In addition, this should check if the matched model patches point towards the `pcd_origin_transformed`. 
+
                 # Calculate support from patch points and ifc oboxes
-                point_support_obox = 0.0           
+                point_support_4PlCS = 0.0           
                 for i in pcd_4PlCS["patch_ids"]:
                     pcd_patch_downpcd =  copy.deepcopy(pcd_patches[i]["downpcd"])
                     pcd_patch_downpcd.transform(Transformation13)
@@ -1137,7 +1199,7 @@ def run_4plcs(ifc_path, pcd_path):
                         ifc_patch_obox = ifc_patches[j]["obox"]
                         
                         pcd_patch_downpcd_cropped = pcd_patch_downpcd.crop(ifc_patch_obox)
-                        point_support_obox += len(pcd_patch_downpcd_cropped.points)
+                        point_support_4PlCS += len(pcd_patch_downpcd_cropped.points)
                        
                 # Calculate minimum support
                 a4PlCS_point_total = 0.0  
@@ -1145,18 +1207,18 @@ def run_4plcs(ifc_path, pcd_path):
                     a4PlCS_point_total += len(pcd_patches[i]["downpcd"].points)
                 point_support_4PlCS_min = int(round(a4PlCS_point_total * min_support_ratio))
 
-                if point_support_obox < point_support_4PlCS_min:
+                if point_support_4PlCS < point_support_4PlCS_min:
                     continue
 
                 candidate = {"transformation12": Transformation12, 
                             "transformation23": Transformation23,
                             "transformation13": Transformation13, 
-                            "support-obox": point_support_obox}
+                            "support-4PlCS": point_support_4PlCS}
                 candidates.append(candidate)
 
-        sorted_filtered_candidates = sorted(candidates, key=lambda x: x["support-obox"], reverse=True)
+        sorted_candidates = sorted(candidates, key=lambda x: x["support-4PlCS"], reverse=True)
 
-        return sorted_filtered_candidates
+        return sorted_candidates
 
 
     def is_similar_matrix(T1, T2, tol=1e-5):
@@ -1190,6 +1252,14 @@ def run_4plcs(ifc_path, pcd_path):
     def rotation_matrix_to_euler_angles(R_mat, order='xyz', degrees=True):
         """
         Convert a 3x3 rotation matrix to Euler angles.
+
+        Parameters:
+            R_mat (numpy.ndarray): 3x3 rotation matrix
+            order (str): Axis order for Euler angles (e.g., 'xyz', 'zyx')
+            degrees (bool): If True, return angles in degrees; otherwise in radians
+
+        Returns:
+            numpy.ndarray: Array of 3 Euler angles
         """
         r = R.from_matrix(R_mat)
         return r.as_euler(order, degrees=degrees)
@@ -1237,15 +1307,16 @@ def run_4plcs(ifc_path, pcd_path):
                 good_4PlCS_pair = {"pcd_4PlCS": pcd_4PlCS, 
                                    "ifc_4PlCS": ifc_4PlCS, 
                                    "transformation": transf["transformation13"], 
-                                   "support-obox": transf["support-obox"]}
+                                   "support-4PlCS": transf["support-4PlCS"]}
                 
                 best_4PlCS_pairs.append(good_4PlCS_pair)
 
     print (f"Number of 4PlCS pairs retained with min support ratio = {min_support_ratio}: {len(best_4PlCS_pairs)}")
 
     # Keep 500 transformations with largest support and remove duplicates
-    sorted_best_4PlCS_pairs = sorted(best_4PlCS_pairs, key=lambda c: c["support-obox"], reverse=True)
-    top_4PlCS_pairs = sorted_best_4PlCS_pairs[:500]
+    max_trans_count = 500
+    sorted_best_4PlCS_pairs = sorted(best_4PlCS_pairs, key=lambda c: c["support-4PlCS"], reverse=True)
+    top_4PlCS_pairs = sorted_best_4PlCS_pairs[:max_trans_count]
     stime_duplicate = time.time()
     unique_top_4PlCS_pairs = remove_duplicate_transformations2(top_4PlCS_pairs, angle_tol=0.1, dist_tol=0.1)
     print (f"Number of top unique 4PlCS pairs: {len(unique_top_4PlCS_pairs)}")
@@ -1262,8 +1333,8 @@ def run_4plcs(ifc_path, pcd_path):
     print(f"Printing the top {print_count} transformations in terms of point support.")
 
     for a4PlCS_pair in unique_top_4PlCS_pairs[:print_count]:
-        support_obox = a4PlCS_pair["support-obox"]
-        print(support_obox)
+        support_4PlCS = a4PlCS_pair["support-4PlCS"]
+        print(support_4PlCS)
 
         transformation = a4PlCS_pair["transformation"]
         print(transformation)
@@ -1303,10 +1374,10 @@ def run_4plcs(ifc_path, pcd_path):
     # Refine selection based on support from all patches
     stime_order_4PlCSs = time.time()
 
-    order_count = 200
+    order_max_count = 200
     final_4PlCS_pairs = []
 
-    for a4PlCS_pair in unique_top_4PlCS_pairs[:order_count]:
+    for a4PlCS_pair in unique_top_4PlCS_pairs[:order_max_count]:
         transformation = a4PlCS_pair["transformation"]
 
         # total_count = 0
@@ -1331,11 +1402,14 @@ def run_4plcs(ifc_path, pcd_path):
     print (f"Number of 4PlCS pairs final: {len(final_4PlCS_pairs)}")
 
     # Print Final Pairs
+    if APPLY_RANDOM_TRANSFORM:
+        print(random_transform_inv)
+
     print_count = 10
     print(f"Printing the top {print_count} transformations in terms of point support.")
 
     for a4PlCS_pair in final_4PlCS_pairs[:print_count]:
-        support = a4PlCS_pair["support-obox"]
+        support = a4PlCS_pair["support-4PlCS"]
         print(f"4PlCS Support: {support}")
         support_mesh = a4PlCS_pair["support-patches"]
         print(support_mesh)
@@ -1359,6 +1433,7 @@ def run_4plcs(ifc_path, pcd_path):
     duration_total = duration_pcd_patches + duration_pcd_4PlCSs + duration_ifc_patches + duration_ifc_4PlCSs + duration_match_4PlCSs + duration_order_4PlCSs
     print(f"Time total: {duration_total:.2f} s")
 
+
     # Plot Final Top Pairs
     plot_count = min(5, len(final_4PlCS_pairs))
 
@@ -1376,10 +1451,10 @@ def run_4plcs(ifc_path, pcd_path):
         pcd_viz.transform(transformation)
         geom.append(pcd_viz)
 
-        for pcd_patch in pcd_patches[:30]:
-            pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
-            pcd_patch_pcd.transform(transformation)
-            # geom.append(pcd_patch_pcd)
+        #for pcd_patch in pcd_patches[:30]:
+        #    pcd_patch_pcd = copy.deepcopy(pcd_patch["downpcd"])
+        #    pcd_patch_pcd.transform(transformation)
+        #    geom.append(pcd_patch_pcd)
         
         geom.extend(all_meshes)
 
