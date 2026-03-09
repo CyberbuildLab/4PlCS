@@ -744,6 +744,7 @@ def run_4plcs(ifc_path, pcd_path):
 
     ifc_patches = []
     ifc_patches_too_small = []
+    ifc_patches_wrong_orientation = []
 
     ifc_patches_total = 0
 
@@ -1429,7 +1430,7 @@ def run_4plcs(ifc_path, pcd_path):
 
     etime_order_4PlCSs = time.time()
     duration_order_4PlCSs = etime_order_4PlCSs - stime_order_4PlCSs
-    print(f"Time to order top {order_count} 4PlCSs: {duration_order_4PlCSs:.2f} s")
+    print(f"Time to order top {order_max_count} 4PlCSs: {duration_order_4PlCSs:.2f} s")
     duration_total = duration_pcd_patches + duration_pcd_4PlCSs + duration_ifc_patches + duration_ifc_4PlCSs + duration_match_4PlCSs + duration_order_4PlCSs
     print(f"Time total: {duration_total:.2f} s")
 
@@ -1509,11 +1510,9 @@ def run_4plcs(ifc_path, pcd_path):
     t_est = final_transformation[:3, 3]
     diff_translation = t_est - random_translation_inv
     print(f"Translation: {t_est} with expected {random_translation_inv} diff: {diff_translation}")
-
-    # Save transformed point cloud
     output_dir = os.path.join("output")
     os.makedirs(output_dir, exist_ok=True)
-    pcd_transformed = copy.deepcopy(downpcd_before_transform)
+    pcd_transformed = copy.deepcopy(pcd) # save transformed point cloud in original resolution
     pcd_transformed.transform(final_transformation)
     output_path = os.path.join(output_dir, f"{pcd_filename}_aligned.ply")
     o3d.io.write_point_cloud(output_path, pcd_transformed)
